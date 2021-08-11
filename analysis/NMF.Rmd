@@ -1,0 +1,115 @@
+---
+title: "NMF"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Loading packages and data
+NMF was performed on 
+
+
+```{r}
+library(data.table)
+library(readxl)
+library(NMF)
+library(umap)
+library(pheatmap)
+library(fossil)
+suppressPackageStartupMessages(library(ComplexHeatmap))
+suppressPackageStartupMessages(library(circlize))
+library(RColorBrewer)
+library(ggplot2)
+library(peakSeason)
+
+```
+
+## Optimal number of components
+Cophenetic correlation is a measure of goodness of fit.
+
+```{r echo=FALSE}
+nmf_trial_nrows <- readRDS("/omics/groups/OE0219/internal/AnnaR/NMF/nmf_trial_nrows.RDS")
+trial_nrows <- c(5000, 10000, 15000, 20000, 25000, 30000, 35000, 35838)
+
+
+row_cols = RColorBrewer::brewer.pal(n = 9, name = "YlOrRd")[2:9]
+par(mar = c(4, 5, 1, 1), cex = 0.8)
+
+plot(nmf_trial_nrows[[1]]$cor_metric$rank, nmf_trial_nrows[[1]]$cor_metric$cophenetic , axes = FALSE, ylim = c(0.85, 1), xlim = c(2, 10), pch = 16, col = row_cols[1], xlab = NA, ylab = NA)
+
+abline(h = seq(0.85, 1, 0.01), v = 2:10, col = grDevices::adjustcolor(col = 'gray70', alpha.f = 0.7), lty = 2)
+
+lines(nmf_trial_nrows[[1]]$cor_metric$rank, nmf_trial_nrows[[1]]$cor_metric$cophenetic, lwd = 1.2, col = row_cols[1])
+points(nmf_trial_nrows[[1]]$cor_metric$rank, nmf_trial_nrows[[1]]$cor_metric$cophenetic, pch = 19, col = row_cols[1])
+
+for(i in 2:length(nmf_trial_nrows)){
+  lines(x = nmf_trial_nrows[[i]]$cor_metric$rank, nmf_trial_nrows[[i]]$cor_metric$cophenetic, col = row_cols[i])
+  points(nmf_trial_nrows[[i]]$cor_metric$rank, nmf_trial_nrows[[i]]$cor_metric$cophenetic, pch = 19, col = row_cols[i])
+}
+
+axis(side = 1, at = 2:10, labels = 2:10, font = 1)
+axis(side = 2, at = seq(0.85, 1, 0.01), font = 1, las = 2, cex = 1.4)
+
+mtext(text = "Number of components", side = 1, line = 2.5, adj = 0, cex = 0.8)
+mtext(text = "Cophenetic-correlation metric", side = 2, line = 3.5, adj = 0, cex = 0.8)
+
+legend(x = 9, y = 1.0, legend = trial_nrows, col = row_cols, pch = 19, cex = 0.8)
+
+```
+Optimal number of components seems to be n= x
+
+## Cluster stability
+Re-run nmf at n=3 for above range of probes to access cluster stability.
+
+## Rand-Index to access cluster integrity 
+Check how stable the clusters are by estimating Rand-index between all k-means clustering results. Performed k-means clustering on canepi-srv1.
+
+```{r}
+#load clustering results
+nmf_k3_clusters = readRDS("/omics/groups/OE0219/internal/AnnaR/NMF/nmf_k3_clusters.RDS")
+ 
+#pairwise rand-index estimation
+interactions = sapply(1:ncol(nmf_k3_clusters), function(i) {
+  sapply(1:ncol(nmf_k3_clusters), function(j) {
+    fossil::rand.index(group1 = nmf_k3_clusters[, i], group2 = nmf_k3_clusters[, j])
+  })
+})
+
+#Draw rand-index
+rownames(interactions) = colnames(interactions) = colnames(nmf_k3_clusters)
+
+interactions[lower.tri(x = interactions)] = NA
+m <- nrow(interactions)
+n <- ncol(interactions)
+
+par(bty="n", mar = c(1, 4, 2, 5)+.1, las=2, tcl=-.33, cex = 0.6)
+image(
+  x = 1:n,
+  y = 1:m,
+  interactions,
+  col = rev(RColorBrewer::brewer.pal(9, "PRGn")),
+  xaxt = "n",
+  yaxt = "n",
+  xlab = "",
+  ylab = "",
+  xlim = c(0, n+2),
+  ylim = c(0, n+2)
+)
+abline(h=0:n+.5, col="white", lwd=.5)
+abline(v=0:n+.5, col="white", lwd=.5)
+
+image(y = seq(0.5*nrow(interactions), 0.9*nrow(interactions), length.out = 8), x=rep(n,2)+c(2,2.5)+1, z=matrix(c(1:8), nrow=1), col = rev(RColorBrewer::brewer.pal(8,"PRGn")), add=TRUE)
+atLims = seq(0.5*nrow(interactions), 0.9*nrow(interactions), length.out = 7)
+atLimsLabs = round(seq(range(interactions, na.rm = T)[1], range(interactions, na.rm = T)[2], length.out = 7), 2)
+axis(side = 4, at = atLims,  tcl = -.15, labels = atLimsLabs, las = 1, lwd = .5)
+mtext(side = 4, at = median(atLims), "Rand Index", las = 3, cex = 0.9, line = 3, font = 2)
+
+mtext(side = 2, at = 1:m, text = gsub(pattern = "nprobes_", replacement = "", x = colnames(interactions)), cex = 0.7, font = 1)
+mtext(side = 3, at = 1:n, text = gsub(pattern = "nprobes_", replacement = "", x = colnames(interactions)), las = 2, cex = 0.7, font = 1, line = -2) 
+
+#
+
+```
+## Correlation matrix
+Simple visualization to see movement of samples for different clustering results
